@@ -3,6 +3,7 @@
  */
 const config = require('../config');
 const tokenManager = require('./token-manager');
+const TokenStorage = require('./token-storage');
 
 /**
  * About tool handler
@@ -24,12 +25,10 @@ async function handleAbout() {
  */
 async function handleAuthenticate(args) {
   const force = args && args.force === true;
-  
+
   // For test mode, create a test token
   if (config.USE_TEST_MODE) {
-    // Create a test token with a 1-hour expiry
     tokenManager.createTestTokens();
-    
     return {
       content: [{
         type: "text",
@@ -37,10 +36,24 @@ async function handleAuthenticate(args) {
       }]
     };
   }
-  
-  // For real authentication, generate an auth URL and instruct the user to visit it
+
+  // Check for existing valid tokens unless forced re-auth
+  if (!force) {
+    const tokenStorage = new TokenStorage();
+    const existingToken = await tokenStorage.getValidAccessToken();
+    if (existingToken) {
+      return {
+        content: [{
+          type: "text",
+          text: 'Already authenticated. Tokens are valid and will auto-refresh as needed.'
+        }]
+      };
+    }
+  }
+
+  // No valid tokens — return OAuth URL for interactive login
   const authUrl = `${config.AUTH_CONFIG.authServerUrl}/auth?client_id=${config.AUTH_CONFIG.clientId}`;
-  
+
   return {
     content: [{
       type: "text",
@@ -54,25 +67,17 @@ async function handleAuthenticate(args) {
  * @returns {object} - MCP response
  */
 async function handleCheckAuthStatus() {
-  console.error('[CHECK-AUTH-STATUS] Starting authentication status check');
-  
-  const tokens = tokenManager.loadTokenCache();
-  
-  console.error(`[CHECK-AUTH-STATUS] Tokens loaded: ${tokens ? 'YES' : 'NO'}`);
-  
-  if (!tokens || !tokens.access_token) {
-    console.error('[CHECK-AUTH-STATUS] No valid access token found');
+  const tokenStorage = new TokenStorage();
+  const accessToken = await tokenStorage.getValidAccessToken();
+
+  if (!accessToken) {
     return {
-      content: [{ type: "text", text: "Not authenticated" }]
+      content: [{ type: "text", text: "Not authenticated. Please run the authenticate tool." }]
     };
   }
-  
-  console.error('[CHECK-AUTH-STATUS] Access token present');
-  console.error(`[CHECK-AUTH-STATUS] Token expires at: ${tokens.expires_at}`);
-  console.error(`[CHECK-AUTH-STATUS] Current time: ${Date.now()}`);
-  
+
   return {
-    content: [{ type: "text", text: "Authenticated and ready" }]
+    content: [{ type: "text", text: "Authenticated and ready." }]
   };
 }
 
